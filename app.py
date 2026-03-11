@@ -33,14 +33,12 @@ numeric_cols = master_df.select_dtypes(include=[np.number]).columns.tolist()
 stock_col = next((c for c in master_df.columns if 'stock' in str(c).lower() or 'ticker' in str(c).lower()), master_df.columns[0])
 valid_stocks = master_df[stock_col].dropna().unique().tolist()
 
-# Find the Target Price column to use as our baseline for the math
 target_col = next((c for c in master_df.columns if 'target' in str(c).lower()), None)
 
 # --- 4. SIDEBAR CHECKBOXES ---
 st.sidebar.header("1. Select Stocks")
 selected_stocks = []
 
-# Create a checkbox for every stock. We default to checking the first one.
 for i, stock in enumerate(valid_stocks):
     if st.sidebar.checkbox(str(stock), value=(i == 0)):
         selected_stocks.append(stock)
@@ -50,7 +48,6 @@ st.sidebar.divider()
 st.sidebar.header("2. Select Metrics to Plot")
 selected_metrics = []
 
-# Create a checkbox for every numeric column. Default to checking price and target.
 for col in numeric_cols:
     is_default = 'price' in str(col).lower() or 'target' in str(col).lower()
     if st.sidebar.checkbox(str(col), value=is_default):
@@ -65,34 +62,28 @@ else:
     if not target_col:
         st.warning("Note: Could not find a 'Target' column to calculate correlation coefficients against.")
 
-    # Loop through every stock the user checked
     for stock in selected_stocks:
         st.subheader(f"📊 Performance: {stock}")
-        
-        # Filter data for this specific stock
         stock_data = master_df[master_df[stock_col] == stock].sort_values(by='File_Date')
 
-        # --- COEFFICIENT SCORECARDS ---
+        # --- COEFFICIENT SCORECARDS (UPDATED) ---
         if target_col:
-            st.write(f"**Correlation Coefficient (*r*) vs {target_col}:**")
-            # Create a clean row of metrics
-            metric_columns = st.columns(len(selected_metrics))
+            # Create a list of metrics that DOES NOT include the target column itself
+            metrics_to_correlate = [m for m in selected_metrics if m != target_col]
             
-            for idx, metric in enumerate(selected_metrics):
-                if metric == target_col:
-                    metric_columns[idx].metric(label=f"{metric}", value="1.00", help="Target compared to itself.")
-                    continue
+            # Only show the correlation section if there is actually something to compare
+            if metrics_to_correlate:
+                st.write(f"**Correlation Coefficient (*r*) vs {target_col}:**")
+                metric_columns = st.columns(len(metrics_to_correlate))
                 
-                # Drop empty rows so the math works
-                clean_data = stock_data.dropna(subset=[metric, target_col])
-                
-                # Check if we have enough varying data points to calculate correlation
-                if len(clean_data) > 1 and clean_data[metric].nunique() > 1 and clean_data[target_col].nunique() > 1:
-                    # Calculate Pearson's r
-                    r = np.corrcoef(clean_data[metric], clean_data[target_col])[0, 1]
-                    metric_columns[idx].metric(label=f"{metric}", value=f"{r:.3f}")
-                else:
-                    metric_columns[idx].metric(label=f"{metric}", value="N/A", help="Not enough variance.")
+                for idx, metric in enumerate(metrics_to_correlate):
+                    clean_data = stock_data.dropna(subset=[metric, target_col])
+                    
+                    if len(clean_data) > 1 and clean_data[metric].nunique() > 1 and clean_data[target_col].nunique() > 1:
+                        r = np.corrcoef(clean_data[metric], clean_data[target_col])[0, 1]
+                        metric_columns[idx].metric(label=f"{metric}", value=f"{r:.3f}")
+                    else:
+                        metric_columns[idx].metric(label=f"{metric}", value="N/A", help="Not enough variance.")
 
         # --- PLOT THE CHART ---
         fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -111,12 +102,11 @@ else:
             template="plotly_white", 
             hovermode="x unified",
             height=500,
-            margin=dict(t=30, b=30) # Tidy up the margins
+            margin=dict(t=30, b=30)
         )
         
-        # Keep Market Cap on the right-hand side so it doesn't crush the price lines
         fig.update_yaxes(title_text="Standard Metrics", secondary_y=False)
         fig.update_yaxes(title_text="Large Metrics (Cap)", secondary_y=True, showgrid=False)
         
         st.plotly_chart(fig, use_container_width=True)
-        st.divider() # Adds a clean horizontal line between stocks
+        st.divider()
